@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多功能智能日历与出勤统计工具</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- 引入 Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 引入 Alpine.js 实现轻量级响应式状态管理 -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background-color: #f8fafc;
+            user-select: none;
+        }
+        [x-cloak] {
+            display: none !important;
+        }
+        /* 自定义滑块样式 */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 999px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #4f46e5;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(79, 70, 229, 0.35);
+            transition: transform 0.15s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen pb-10"
+      x-data="calendarApp()"
+      @mouseup.window="endPaint()"
+      @touchend.window="endPaint()">
+
+    <!-- 全局浮动消息通知 (替代 alert) -->
+    <div class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0 translate-y-2"
+                 x-transition:enter-end="opacity-100 translate-y-0"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 class="pointer-events-auto px-4 py-2.5 rounded-xl shadow-lg border text-sm font-medium flex items-center gap-2 bg-white"
+                 :class="{
+                     'border-emerald-200 text-emerald-800': toast.type === 'success',
+                     'border-amber-200 text-amber-800': toast.type === 'warning',
+                     'border-indigo-200 text-indigo-800': toast.type === 'info'
+                 }">
+                <i class="fa-solid"
+                   :class="{
+                       'fa-circle-check text-emerald-500': toast.type === 'success',
+                       'fa-triangle-exclamation text-amber-500': toast.type === 'warning',
+                       'fa-circle-info text-indigo-500': toast.type === 'info'
+                   }"></i>
+                <span x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- 顶部精简导航栏 -->
+    <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
+            <!-- 左侧标题与年月控制 -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <div class="flex items-center gap-2 text-indigo-600 font-bold text-base sm:text-lg">
+                    <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                        <i class="fa-regular fa-calendar-check"></i>
+                    </div>
+                    <span class="hidden md:inline text-slate-900">智能出勤日历</span>
+                </div>
+
+                <!-- 年月切换控制器 -->
+                <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/70">
+                    <button @click="view === 'month' ? changeMonth(-1) : currentYear--"
+                            class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white hover:text-indigo-600 transition"
+                            :title="view === 'month' ? '上个月' : '上一年'">
+                        <i class="fa-solid fa-chevron-left text-xs"></i>
+                    </button>
+
+                    <div class="flex items-center px-1.5 gap-1">
+                        <select x-model.number="currentYear"
+                                class="bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer">
+                            <template x-for="y in yearList" :key="y">
+                                <option :value="y" x-text="y + '年'"></option>
+                            </template>
+                        </select>
+                        <template x-if="view === 'month'">
+                            <select x-model.number="currentMonth"
+                                    class="bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer">
+                                <template x-for="(mName, idx) in monthNames" :key="idx">
+                                    <option :value="idx" x-text="mName"></option>
+                                </template>
+                            </select>
+                        </template>
+                    </div>
+
+                    <button @click="view === 'month' ? changeMonth(1) : currentYear++"
+                            class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white hover:text-indigo-600 transition"
+                            :title="view === 'month' ? '下个月' : '下一年'">
+                        <i class="fa-solid fa-chevron-right text-xs"></i>
+                    </button>
+                </div>
+
+                <button @click="goToToday()"
+                        class="px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:text-indigo-600 transition">
+                    今天
+                </button>
+            </div>
+
+            <!-- 右侧快捷同步与视图切换按钮 -->
+            <div class="flex items-center gap-2">
+                <!-- 快捷云同步按钮组（配置 Token 后显示） -->
+                <template x-if="gistConfig.token">
+                    <div class="hidden sm:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/70">
+                        <button @click="pushToGist()" :disabled="syncing"
+                                class="px-2.5 py-1 rounded-lg text-xs font-semibold text-indigo-600 hover:bg-white transition flex items-center gap-1 disabled:opacity-50"
+                                title="将当前日历数据上传到 GitHub Gist">
+                            <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
+                            <span>上传</span>
+                        </button>
+                        <button @click="pullFromGist()" :disabled="syncing"
+                                class="px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-600 hover:bg-white transition flex items-center gap-1 disabled:opacity-50"
+                                title="从 GitHub Gist 拉取最新数据">
+                            <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-down'"></i>
+                            <span>拉取</span>
+                        </button>
+                    </div>
+                </template>
+
+                <!-- 视图切换按钮 -->
+                <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/70">
+                    <button @click="view = 'month'"
+                            class="px-3 py-1 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5"
+                            :class="view === 'month' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'">
+                        <i class="fa-regular fa-calendar"></i>
+                        <span>月视图</span>
+                    </button>
+                    <button @click="view = 'year'"
+                            class="px-3 py-1 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5"
+                            :class="view === 'year' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900'">
+                        <i class="fa-solid fa-table-cells"></i>
+                        <span>年视图</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主容器 -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-5">
+
+        <!-- ==================== 顶部置顶：日历主视图区 ==================== -->
+        <section>
+            <!-- 1. 月视图 (Month View) -->
+            <div x-show="view === 'month'" class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+                <!-- 月份统计信息条 & 快捷笔刷工具栏 -->
+                <div class="px-4 sm:px-5 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2.5 bg-slate-50/70">
+                    <!-- 实时统计标签组 -->
+                    <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+                        <h2 class="text-base sm:text-lg font-bold text-slate-900 mr-1" x-text="currentYear + ' 年 ' + monthNames[currentMonth]"></h2>
+                        <span class="px-2 py-1 bg-white text-slate-600 text-xs font-medium rounded-lg border border-slate-200">
+                            工作日: <strong class="text-slate-800" x-text="currentMonthStats.baseWorkdays"></strong>
+                        </span>
+                        <span x-show="currentMonthStats.holidayDays > 0" class="px-2 py-1 bg-cyan-50 text-cyan-700 text-xs font-medium rounded-lg border border-cyan-200">
+                            法定: -<strong x-text="currentMonthStats.holidayDays"></strong>
+                        </span>
+                        <span x-show="currentMonthStats.leaveDays > 0" class="px-2 py-1 bg-rose-50 text-rose-700 text-xs font-medium rounded-lg border border-rose-200">
+                            请假: -<strong x-text="currentMonthStats.leaveDays"></strong>
+                        </span>
+                        <span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-lg border border-indigo-100">
+                            实际工作日: <strong x-text="currentMonthStats.workdays"></strong> 天
+                        </span>
+                        <span class="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-lg border border-emerald-200">
+                            应出勤 (<span x-text="attendanceRate"></span>%): <strong x-text="currentMonthStats.requiredAttendance"></strong> 天
+                        </span>
+                        <span class="px-2.5 py-1 text-xs font-semibold rounded-lg border flex items-center gap-1.5"
+                              :class="currentMonthStats.isAttendanceMet ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'">
+                            <span>已出勤: <strong x-text="currentMonthStats.normalAttendance"></strong> / <span x-text="currentMonthStats.requiredAttendance"></span> 天</span>
+                            <span class="px-1.5 py-0.2 rounded text-[11px] font-bold"
+                                  :class="currentMonthStats.isAttendanceMet ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'"
+                                  x-text="currentMonthStats.isAttendanceMet ? (currentMonthStats.attendanceDiff > 0 ? '✅ 已达标 (超出 ' + currentMonthStats.attendanceDiff + ' 天)' : '✅ 刚好达标') : '⏳ 未达标 (还差 ' + Math.abs(currentMonthStats.attendanceDiff) + ' 天)'">
+                            </span>
+                        </span>
+                    </div>
+
+                    <!-- 快捷画笔切换栏 -->
+                    <div class="flex items-center gap-1.5 overflow-x-auto max-w-full py-0.5">
+                        <span class="text-xs text-slate-400 mr-0.5 hidden lg:inline">快捷笔刷:</span>
+                        <template x-for="item in palette" :key="item.id">
+                            <button @click="selectedColor = item.id"
+                                    class="px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition flex-shrink-0"
+                                    :class="selectedColor === item.id ? 'bg-slate-800 text-white border-slate-800 shadow-2xs' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'"
+                                    :title="item.name + (item.deductsWorkday ? '（周一至周五自动扣减工作日）' : '')">
+                                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{ backgroundColor: item.hex }"></span>
+                                <span class="hidden sm:inline" x-text="item.name"></span>
+                            </button>
+                        </template>
+                        <button @click="selectedColor = null"
+                                class="px-2.5 py-1 rounded-lg text-xs font-medium border transition flex items-center gap-1 flex-shrink-0"
+                                :class="selectedColor === null ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'"
+                                title="橡皮擦（清除日期颜色）">
+                            <i class="fa-solid fa-eraser"></i>
+                            <span class="hidden sm:inline">擦除</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 星期表头 (周一到周日) -->
+                <div class="grid grid-cols-7 border-b border-slate-200 bg-slate-50/40 text-center py-2.5">
+                    <template x-for="(dayName, idx) in weekDays" :key="idx">
+                        <div class="text-xs font-bold tracking-wider"
+                             :class="idx >= 5 ? 'text-rose-500' : 'text-slate-500'"
+                             x-text="dayName"></div>
+                    </template>
+                </div>
+
+                <!-- 月视图大网格日历 -->
+                <div class="grid grid-cols-7 divide-x divide-y divide-slate-100"
+                     @mouseleave="isMouseDown = false">
+                    <template x-for="(cell, index) in monthGridCells" :key="index">
+                        <div @mousedown="startPaint(cell)"
+                             @mouseenter="continuePaint(cell)"
+                             @touchstart.prevent="startPaint(cell)"
+                             class="min-h-[76px] sm:min-h-[96px] p-1.5 sm:p-2.5 transition-colors relative flex flex-col justify-between"
+                             :class="[
+                                 cell.isCurrentMonth ? 'cursor-pointer' : 'bg-slate-50/60 opacity-45 cursor-default',
+                                 cell.isCurrentMonth && !cell.colorObj && cell.isWeekend ? 'bg-slate-50/80 hover:bg-slate-100/80' : '',
+                                 cell.isCurrentMonth && !cell.colorObj && !cell.isWeekend ? 'bg-white hover:bg-indigo-50/30' : ''
+                             ]"
+                             :style="cell.isCurrentMonth && cell.colorObj ? { backgroundColor: cell.colorObj.hex + '1C' } : {}">
+
+                            <!-- 顶部日期数字与状态徽标 -->
+                            <div class="flex items-center justify-between gap-1">
+                                <span class="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition"
+                                      :class="[
+                                          cell.isToday ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-200' : '',
+                                          !cell.isToday && cell.isWeekend && cell.isCurrentMonth ? 'text-rose-500' : '',
+                                          !cell.isToday && !cell.isWeekend && cell.isCurrentMonth ? 'text-slate-800' : '',
+                                          !cell.isCurrentMonth ? 'text-slate-400' : ''
+                                      ]"
+                                      x-text="cell.day">
+                                </span>
+
+                                <!-- 工作日 / 周末 标识 -->
+                                <template x-if="cell.isCurrentMonth">
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                          :class="cell.isWeekend ? 'text-slate-400' : (cell.colorObj && cell.colorObj.deductsWorkday ? 'bg-amber-100 text-amber-800' : 'text-slate-400')"
+                                          x-text="cell.isWeekend ? '休' : (cell.colorObj && cell.colorObj.deductsWorkday ? '扣减' : '班')">
+                                    </span>
+                                </template>
+                            </div>
+
+                            <!-- 底部涂色标签胶囊 -->
+                            <div class="mt-1.5 min-h-[22px] flex items-end">
+                                <template x-if="cell.isCurrentMonth && cell.colorObj">
+                                    <div class="w-full px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-semibold text-white truncate shadow-2xs flex items-center justify-between gap-1"
+                                         :style="{ backgroundColor: cell.colorObj.hex }">
+                                        <span class="truncate" x-text="cell.colorObj.name"></span>
+                                        <span x-show="!cell.isWeekend && cell.colorObj.deductsWorkday"
+                                              class="text-[9px] bg-black/20 px-1 rounded flex-shrink-0">-1工</span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- 底部操作提示条 -->
+                <div class="px-4 sm:px-5 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-500">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-computer-mouse text-indigo-500"></i>
+                        <span>提示：点击单个日期或<strong>按住鼠标拖拽</strong>可批量涂色；周一至周五涂上“法定节假日”或“请假/年假”将自动扣减工作日。</span>
+                    </div>
+                    <button @click="clearCurrentMonthData()"
+                            class="text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-rose-50 transition">
+                        <i class="fa-solid fa-broom"></i>
+                        <span>清空本月标记</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 2. 年视图 (Year View) -->
+            <div x-show="view === 'year'" class="space-y-4" x-cloak>
+                <!-- 年视图顶部统计概览 -->
+                <div class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200 flex items-center justify-between flex-wrap gap-3">
+                    <div class="flex items-center flex-wrap gap-2">
+                        <h2 class="text-lg sm:text-xl font-bold text-slate-900 mr-1" x-text="currentYear + ' 全年出勤统计概览'"></h2>
+                        <span class="px-2.5 py-1 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
+                            工作日: <strong x-text="yearTotalStats.baseWorkdays"></strong> 天
+                        </span>
+                        <span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-lg border border-indigo-100">
+                            实际工作日: <strong x-text="yearTotalStats.workdays"></strong> 天
+                        </span>
+                        <span class="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-lg border border-emerald-200">
+                            全年应出勤合计: <strong x-text="yearTotalStats.requiredAttendance"></strong> 天 (<span x-text="attendanceRate"></span>%)
+                        </span>
+                        <span class="px-2.5 py-1 text-xs font-semibold rounded-lg border flex items-center gap-1.5"
+                              :class="yearTotalStats.isAttendanceMet ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'">
+                            <span>全年正常出勤: <strong x-text="yearTotalStats.normalAttendance"></strong> / <span x-text="yearTotalStats.requiredAttendance"></strong> 天</span>
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-bold"
+                                  :class="yearTotalStats.isAttendanceMet ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'"
+                                  x-text="yearTotalStats.isAttendanceMet ? '✅ 全年已达标' : '⏳ 全年未达标'">
+                            </span>
+                        </span>
+                    </div>
+                    <span class="text-xs text-slate-400">点击任意月份卡片进入月视图编辑</span>
+                </div>
+
+                <!-- 12个月份微缩日历网格 -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <template x-for="m in 12" :key="m">
+                        <div @click="currentMonth = m - 1; view = 'month'"
+                             class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200 hover:border-indigo-400 hover:shadow-md transition cursor-pointer flex flex-col justify-between group">
+                            <div>
+                                <!-- 月份卡片标题与统计 -->
+                                <div class="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+                                    <span class="font-bold text-slate-800 group-hover:text-indigo-600 transition" x-text="monthNames[m - 1]"></span>
+                                    <div class="flex items-center gap-1 text-[11px]">
+                                        <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded font-medium"
+                                              x-text="'实工' + getMonthStats(currentYear, m - 1).workdays + '天'"></span>
+                                        <span class="px-1.5 py-0.5 rounded font-semibold"
+                                              :class="getMonthStats(currentYear, m - 1).isAttendanceMet ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'"
+                                              x-text="'出勤 ' + getMonthStats(currentYear, m - 1).normalAttendance + '/' + getMonthStats(currentYear, m - 1).requiredAttendance"></span>
+                                    </div>
+                                </div>
+
+                                <!-- 微缩星期头 -->
+                                <div class="grid grid-cols-7 text-center text-[10px] font-semibold text-slate-400 mb-1">
+                                    <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span class="text-rose-400">六</span><span class="text-rose-400">日</span>
+                                </div>
+
+                                <!-- 微缩日期点阵 -->
+                                <div class="grid grid-cols-7 gap-1 text-center">
+                                    <template x-for="(miniCell, idx) in getMiniMonthCells(currentYear, m - 1)" :key="idx">
+                                        <div class="aspect-square rounded-md flex items-center justify-center text-[10px] font-medium"
+                                             :class="[
+                                                 !miniCell.day ? 'opacity-0' : '',
+                                                 miniCell.day && !miniCell.colorObj && miniCell.isToday ? 'bg-indigo-600 text-white font-bold' : '',
+                                                 miniCell.day && !miniCell.colorObj && !miniCell.isToday && miniCell.isWeekend ? 'text-rose-400 bg-slate-50' : '',
+                                                 miniCell.day && !miniCell.colorObj && !miniCell.isToday && !miniCell.isWeekend ? 'text-slate-600' : '',
+                                                 miniCell.day && miniCell.colorObj ? 'text-white font-bold shadow-2xs' : ''
+                                             ]"
+                                             :style="miniCell.day && miniCell.colorObj ? { backgroundColor: miniCell.colorObj.hex } : {}"
+                                             x-text="miniCell.day || ''">
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- 卡片底部简洁达标状态标识 
+                            <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                                <span>出勤状态</span>
+                                <span class="px-2 py-0.5 rounded font-semibold text-[10px]"
+                                      :class="getMonthStats(currentYear, m - 1).isAttendanceMet ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                                      x-text="getMonthStats(currentYear, m - 1).isAttendanceMet ? '✅ 已达标' : '⏳ 未达标'">
+                                </span>
+                            </div>-->
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 下方控制面板区 ==================== -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+            <!-- 左侧 (5列)：出勤率百分比计算器 & 工作日扣减设置 -->
+            <div class="lg:col-span-5 bg-white rounded-2xl p-5 shadow-xs border border-slate-200 flex flex-col justify-between space-y-4">
+                <div class="space-y-3.5">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-calculator text-indigo-600"></i>
+                            <span>出勤率计算器 (<span x-text="monthNames[currentMonth]"></span>)</span>
+                        </h3>
+                    </div>
+
+                    <!-- 法定节假日与请假天数扣减控制（日历涂色 + 手动调整） -->
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div class="bg-cyan-50/60 rounded-xl p-3 border border-cyan-100">
+                            <div class="flex items-center justify-between text-xs font-semibold text-cyan-900 mb-1.5">
+                                <span><i class="fa-solid fa-umbrella-beach mr-1 text-cyan-600"></i>法定节假日</span>
+                                <span class="text-[11px] bg-white px-1.5 py-0.5 rounded border border-cyan-200 text-cyan-700">
+                                    总计 <strong x-text="currentMonthStats.holidayDays"></strong> 天
+                                </span>
+                            </div>
+                            <div class="flex items-center justify-between text-[11px] text-cyan-700">
+                                <span>涂色 <strong x-text="currentMonthStats.paintedHolidayWeekdays"></strong> + 调整:</span>
+                                <input type="number" min="0" max="31" step="1"
+                                       :value="getManualDeduction(currentYear, currentMonth, 'holiday')"
+                                       @input="setManualDeduction(currentYear, currentMonth, 'holiday', $event.target.value)"
+                                       class="w-12 px-1.5 py-0.5 text-right font-bold text-cyan-900 bg-white border border-cyan-300 rounded focus:outline-none focus:ring-1 focus:ring-cyan-500">
+                            </div>
+                        </div>
+
+                        <div class="bg-rose-50/60 rounded-xl p-3 border border-rose-100">
+                            <div class="flex items-center justify-between text-xs font-semibold text-rose-900 mb-1.5">
+                                <span><i class="fa-solid fa-mug-hot mr-1 text-rose-600"></i>请假天数</span>
+                                <span class="text-[11px] bg-white px-1.5 py-0.5 rounded border border-rose-200 text-rose-700">
+                                    总计 <strong x-text="currentMonthStats.leaveDays"></strong> 天
+                                </span>
+                            </div>
+                            <div class="flex items-center justify-between text-[11px] text-rose-700">
+                                <span>涂色 <strong x-text="currentMonthStats.paintedLeaveWeekdays"></strong> + 调整:</span>
+                                <input type="number" min="0" max="31" step="1"
+                                       :value="getManualDeduction(currentYear, currentMonth, 'leave')"
+                                       @input="setManualDeduction(currentYear, currentMonth, 'leave', $event.target.value)"
+                                       class="w-12 px-1.5 py-0.5 text-right font-bold text-rose-900 bg-white border border-rose-300 rounded focus:outline-none focus:ring-1 focus:ring-rose-500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 出勤率百分比滑块与输入框 -->
+                    <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-semibold text-slate-600">要求出勤率百分比</label>
+                            <div class="flex items-center gap-1">
+                                <input type="number" min="0" max="100" step="1"
+                                       x-model.number="attendanceRate"
+                                       @change="clampAttendanceRate()"
+                                       class="w-16 px-2 py-1 text-right text-sm font-bold text-indigo-600 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <span class="text-sm font-bold text-slate-600">%</span>
+                            </div>
+                        </div>
+
+                        <input type="range" min="0" max="100" step="5" x-model.number="attendanceRate" class="w-full">
+
+                        <!-- 快捷百分比预设按钮 -->
+                        <div class="flex items-center justify-between gap-1.5 pt-0.5">
+                            <template x-for="preset in [100, 80, 75, 60, 50]" :key="preset">
+                                <button @click="attendanceRate = preset"
+                                        class="flex-1 py-1 text-xs font-semibold rounded-lg border transition"
+                                        :class="attendanceRate === preset ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'"
+                                        x-text="preset + '%'">
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 核心计算结果卡片 -->
+                <div class="space-y-2.5">
+                    <div class="grid grid-cols-3 gap-2.5">
+                        <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-100 text-center">
+                            <div class="text-[11px] text-slate-500 mb-0.5">工作日</div>
+                            <div class="text-base font-bold text-slate-700"><span x-text="currentMonthStats.baseWorkdays"></span><span class="text-xs font-normal text-slate-500 ml-0.5">天</span></div>
+                        </div>
+                        <div class="bg-indigo-50/70 rounded-xl p-2.5 border border-indigo-100 text-center">
+                            <div class="text-[11px] text-indigo-700 font-medium mb-0.5">实际工作日</div>
+                            <div class="text-base font-bold text-indigo-700"><span x-text="currentMonthStats.workdays"></span><span class="text-xs font-normal ml-0.5">天</span></div>
+                        </div>
+                        <div class="bg-emerald-50/70 rounded-xl p-2.5 border border-emerald-100 text-center">
+                            <div class="text-[11px] text-emerald-700 font-medium mb-0.5">需出勤</div>
+                            <div class="text-base font-bold text-emerald-700"><span x-text="currentMonthStats.requiredAttendance"></span><span class="text-xs font-normal ml-0.5">天</span></div>
+                        </div>
+                    </div>
+
+                    <!-- 正常出勤达标进度与状态对比条 -->
+                    <div class="rounded-xl p-3 border space-y-2"
+                         :class="currentMonthStats.isAttendanceMet ? 'bg-emerald-50/60 border-emerald-200' : 'bg-amber-50/60 border-amber-200'">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-semibold text-slate-700">
+                                正常出勤进度: <strong class="text-slate-900" x-text="currentMonthStats.normalAttendance"></strong> / <strong class="text-slate-900" x-text="currentMonthStats.requiredAttendance"></strong> 天
+                            </span>
+                            <span class="px-2 py-0.5 rounded-md font-bold text-[11px]"
+                                  :class="currentMonthStats.isAttendanceMet ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'"
+                                  x-text="currentMonthStats.isAttendanceMet ? (currentMonthStats.attendanceDiff > 0 ? '✅ 已达标 (超出 ' + currentMonthStats.attendanceDiff + ' 天)' : '✅ 刚好达标') : '⏳ 未达标 (还差 ' + Math.abs(currentMonthStats.attendanceDiff) + ' 天)'">
+                            </span>
+                        </div>
+                        <div class="w-full h-2 bg-white/80 rounded-full overflow-hidden border border-slate-200/60">
+                            <div class="h-full transition-all duration-300 rounded-full"
+                                 :class="currentMonthStats.isAttendanceMet ? 'bg-emerald-500' : 'bg-amber-500'"
+                                 :style="{ width: currentMonthStats.attendanceProgress + '%' }">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-[11px] text-slate-500 border-t border-slate-100 pt-2.5 flex items-center justify-between">
+                        <span>
+                            公式: (<span x-text="currentMonthStats.baseWorkdays"></span>工作日 - <span class="text-cyan-600 font-semibold" x-text="currentMonthStats.holidayDays"></span>法 - <span class="text-rose-600 font-semibold" x-text="currentMonthStats.leaveDays"></span>假) × <span x-text="attendanceRate"></span>% = <span x-text="(currentMonthStats.workdays * (attendanceRate / 100)).toFixed(2)"></span> → <strong class="text-emerald-600" x-text="currentMonthStats.requiredAttendance"></strong> 天
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧 (7列)：涂色画笔工具箱、月度涂色统计 & JSON数据备份 -->
+            <div class="lg:col-span-7 bg-white rounded-2xl p-5 shadow-xs border border-slate-200 flex flex-col justify-between space-y-4">
+                <div>
+                    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-palette text-indigo-600"></i>
+                            <span>涂色画笔工具箱 & 月度涂色统计</span>
+                            <span class="text-[11px] font-normal text-slate-400 hidden sm:inline">(点击铅笔图标可自定义标签名)</span>
+                        </h3>
+                        <button @click="selectedColor = null"
+                                class="px-3 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5"
+                                :class="selectedColor === null ? 'bg-slate-800 text-white border-slate-800 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'">
+                            <i class="fa-solid fa-eraser"></i>
+                            <span>橡皮擦</span>
+                        </button>
+                    </div>
+
+                    <!-- 画笔选择与当月统计列表 -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                        <template x-for="item in palette" :key="item.id">
+                            <div @click="selectedColor = item.id"
+                                 class="p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between group"
+                                 :class="selectedColor === item.id ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/30' : 'border-slate-200 hover:border-slate-300 bg-white'">
+                                <div class="flex items-center gap-2 min-w-0 flex-1">
+                                    <span class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center shadow-2xs"
+                                          :style="{ backgroundColor: item.hex }">
+                                        <i x-show="selectedColor === item.id" class="fa-solid fa-check text-white text-[10px]"></i>
+                                    </span>
+
+                                    <!-- 可编辑标签名称 -->
+                                    <template x-if="editingLabelId === item.id">
+                                        <input type="text" x-model="item.name"
+                                               @click.stop
+                                               @blur="editingLabelId = null; saveToStorage()"
+                                               @keydown.enter="editingLabelId = null; saveToStorage()"
+                                               class="w-full text-xs font-semibold px-1.5 py-0.5 border border-indigo-400 rounded bg-white focus:outline-none"
+                                               x-init="$el.focus()">
+                                    </template>
+                                    <template x-if="editingLabelId !== item.id">
+                                        <div class="flex items-center gap-1 min-w-0 flex-1">
+                                            <span class="text-xs font-semibold text-slate-700 truncate" x-text="item.name"></span>
+                                            <span x-show="item.deductsWorkday"
+                                                  class="text-[9px] px-1 py-0.2 rounded bg-amber-100 text-amber-800 font-bold flex-shrink-0"
+                                                  title="涂在周一至周五时自动扣减工作日">-工</span>
+                                            <button @click.stop="editingLabelId = item.id"
+                                                    class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 p-0.5 transition"
+                                                    title="修改标签名称">
+                                                <i class="fa-solid fa-pen text-[10px]"></i>
+                                            </button>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <!-- 当月该画笔累计天数 -->
+                                <span class="ml-2 px-2 py-0.5 text-xs font-bold rounded-md flex-shrink-0"
+                                      :style="{ backgroundColor: item.hex + '18', color: item.hex }"
+                                      x-text="getMonthColorCount(currentYear, currentMonth, item.id) + '天'">
+                                </span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- 底部 JSON 数据备份与管理栏 -->
+                <div class="pt-3 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
+                    <div class="flex items-center gap-1.5 text-xs text-slate-500">
+                        <i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i>
+                        <span>数据已实时自动保存至本地浏览器</span>
+                    </div>
+
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <button @click="exportData()"
+                                class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-download text-indigo-600"></i>
+                            <span>导出 JSON</span>
+                        </button>
+
+                        <label class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-upload text-indigo-600"></i>
+                            <span>导入 JSON</span>
+                            <input type="file" accept=".json" class="hidden" @change="importData($event)">
+                        </label>
+
+                        <button @click="clearAllData()"
+                                class="px-3 py-1.5 text-xs font-semibold rounded-xl border transition flex items-center gap-1.5"
+                                :class="confirmPending === 'clearAll' ? 'bg-rose-600 text-white border-rose-600' : 'text-rose-600 bg-rose-50/60 hover:bg-rose-100 border-rose-200'">
+                            <i class="fa-solid fa-trash-can"></i>
+                            <span x-text="confirmPending === 'clearAll' ? '确认重置全部?' : '重置全部'"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部全宽 (12列)：GitHub Gist 多端云同步面板 -->
+            <div class="lg:col-span-12 bg-white rounded-2xl p-5 shadow-xs border border-slate-200 space-y-3">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center text-sm">
+                            <i class="fa-brands fa-github"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <span>跨设备云端同步 (iPhone / MacBook / PC)</span>
+                                <span x-show="gistConfig.lastSync"
+                                      class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      x-text="'上次同步: ' + gistConfig.lastSync"></span>
+                            </h3>
+                            <p class="text-[11px] text-slate-500">通过 GitHub Gist 私有云存储同步涂色记录、请假天数与出勤率配置，多端只需填入同一个 Token 即可互通。</p>
+                        </div>
+                    </div>
+
+                    <button @click="showSyncHelp = !showSyncHelp"
+                            class="text-xs font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50/70 hover:bg-indigo-100/70 transition">
+                        <i class="fa-regular fa-circle-question"></i>
+                        <span x-text="showSyncHelp ? '收起配置说明' : '如何获取 Token?'"></span>
+                    </button>
+                </div>
+
+                <!-- 折叠配置指引 -->
+                <div x-show="showSyncHelp" x-cloak class="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 space-y-1.5">
+                    <p class="font-semibold text-slate-800">三步开启 iPhone / MacBook / PC 实时同步：</p>
+                    <ol class="list-decimal list-inside space-y-1">
+                        <li>登录 GitHub，访问 <strong>Settings → Developer settings → Personal access tokens → Tokens (classic)</strong>，点击 Generate new token。</li>
+                        <li>勾选 <strong>gist</strong> 权限后生成，复制生成的 <code>ghp_...</code> 令牌粘贴到下方 <strong>GitHub Token</strong> 输入框（留空 Gist ID 首次上传会自动创建私有 Gist）。</li>
+                        <li>在另外两台设备（如 iPhone 或 MacBook）打开本页面，填入相同的 Token（及自动生成的 Gist ID），点击<strong>“从云端拉取”</strong>即可同步全部数据。</li>
+                    </ol>
+                </div>
+
+                <!-- Token 与操作输入行 -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
+                    <div class="md:col-span-5 relative">
+                        <input :type="showToken ? 'text' : 'password'"
+                               x-model.trim="gistConfig.token"
+                               @change="saveGistConfig()"
+                               placeholder="输入 GitHub Personal Access Token (需勾选 gist 权限)"
+                               class="w-full pl-3 pr-9 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button @click="showToken = !showToken"
+                                type="button"
+                                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                            <i class="fa-regular" :class="showToken ? 'fa-eye-slash' : 'fa-eye'"></i>
+                        </button>
+                    </div>
+
+                    <div class="md:col-span-3">
+                        <input type="text"
+                               x-model.trim="gistConfig.gistId"
+                               @change="saveGistConfig()"
+                               placeholder="Gist ID (首次上传自动生成)"
+                               class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <div class="md:col-span-4 flex items-center gap-2">
+                        <button @click="pushToGist()"
+                                :disabled="syncing"
+                                class="flex-1 py-2 px-3 rounded-xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition flex items-center justify-center gap-1.5 shadow-2xs disabled:opacity-50">
+                            <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
+                            <span>上传至云端</span>
+                        </button>
+
+                        <button @click="pullFromGist()"
+                                :disabled="syncing"
+                                class="flex-1 py-2 px-3 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition flex items-center justify-center gap-1.5 disabled:opacity-50">
+                            <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-down'"></i>
+                            <span>从云端拉取</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <script>
+        function calendarApp() {
+            const now = new Date();
+            return {
+                view: 'month', // 'month' | 'year'
+                currentYear: now.getFullYear(),
+                currentMonth: now.getMonth(), // 0 - 11
+                attendanceRate: 80, // 默认出勤率 80%
+                selectedColor: 'office', // 当前选中画笔 ID，null 表示橡皮擦
+                editingLabelId: null,
+                isMouseDown: false,
+                paintMode: 'add', // 'add' | 'remove'
+                markedDates: {}, // { 'YYYY-MM-DD': 'colorId' }
+                manualDeductions: {}, // { 'YYYY-MM': { holiday: 0, leave: 0 } }
+                toasts: [],
+                confirmPending: null,
+
+                // GitHub Gist 云端同步状态
+                gistConfig: {
+                    token: '',
+                    gistId: '',
+                    lastSync: ''
+                },
+                syncing: false,
+                showToken: false,
+                showSyncHelp: false,
+
+                monthNames: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+                weekDays: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+
+                palette: [
+                    { id: 'office', name: '正常出勤', hex: '#10b981', deductsWorkday: false },
+                    { id: 'remote', name: '远程办公', hex: '#3b82f6', deductsWorkday: false },
+                    { id: 'overtime', name: '加班/值班', hex: '#f59e0b', deductsWorkday: false },
+                    { id: 'trip', name: '出差外勤', hex: '#8b5cf6', deductsWorkday: false },
+                    { id: 'holiday', name: '法定节假日', hex: '#06b6d4', deductsWorkday: true },
+                    { id: 'leave', name: '请假/年假', hex: '#f43f5e', deductsWorkday: true }
+                ],
+
+                get yearList() {
+                    const base = new Date().getFullYear();
+                    const list = [];
+                    for (let y = base - 5; y <= base + 5; y++) {
+                        list.push(y);
+                    }
+                    return list;
+                },
+
+                init() {
+                    this.loadFromStorage();
+                    this.loadGistConfig();
+                    this.$watch('attendanceRate', () => {
+                        this.clampAttendanceRate();
+                        this.saveToStorage();
+                    });
+                    this.$watch('markedDates', () => {
+                        this.saveToStorage();
+                    }, { deep: true });
+                    this.$watch('manualDeductions', () => {
+                        this.saveToStorage();
+                    }, { deep: true });
+                },
+
+                showToast(message, type = 'info') {
+                    const id = Date.now() + Math.random();
+                    this.toasts.push({ id, message, type });
+                    setTimeout(() => {
+                        this.toasts = this.toasts.filter(t => t.id !== id);
+                    }, 3000);
+                },
+
+                clampAttendanceRate() {
+                    if (isNaN(this.attendanceRate) || this.attendanceRate < 0) this.attendanceRate = 0;
+                    if (this.attendanceRate > 100) this.attendanceRate = 100;
+                },
+
+                goToToday() {
+                    const today = new Date();
+                    this.currentYear = today.getFullYear();
+                    this.currentMonth = today.getMonth();
+                },
+
+                changeMonth(delta) {
+                    let m = this.currentMonth + delta;
+                    if (m < 0) {
+                        this.currentMonth = 11;
+                        this.currentYear--;
+                    } else if (m > 11) {
+                        this.currentMonth = 0;
+                        this.currentYear++;
+                    } else {
+                        this.currentMonth = m;
+                    }
+                },
+
+                formatDateStr(year, month, day) {
+                    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                },
+
+                getMonthKey(year, month) {
+                    return `${year}-${String(month + 1).padStart(2, '0')}`;
+                },
+
+                getColorObj(colorId) {
+                    if (!colorId) return null;
+                    return this.palette.find(p => p.id === colorId) || null;
+                },
+
+                // 获取或设置某月手动调整扣减天数
+                getManualDeduction(year, month, type) {
+                    const key = this.getMonthKey(year, month);
+                    return (this.manualDeductions[key] && this.manualDeductions[key][type]) || 0;
+                },
+
+                setManualDeduction(year, month, type, value) {
+                    const key = this.getMonthKey(year, month);
+                    const num = Math.max(0, Math.min(31, parseInt(value, 10) || 0));
+                    if (!this.manualDeductions[key]) {
+                        this.manualDeductions[key] = { holiday: 0, leave: 0 };
+                    }
+                    this.manualDeductions[key][type] = num;
+                },
+
+                // 核心统计：工作日 - 法定节假日 - 请假天数，再按出勤率向上取整 (Math.ceil)
+                getMonthStats(year, month) {
+                    const totalDays = new Date(year, month + 1, 0).getDate();
+                    let baseWorkdays = 0;
+                    let paintedHolidayWeekdays = 0;
+                    let paintedLeaveWeekdays = 0;
+
+                    for (let d = 1; d <= totalDays; d++) {
+                        const dayOfWeek = new Date(year, month, d).getDay();
+                        const isWeekday = dayOfWeek !== 0 && dayOfWeek !== 6;
+                        if (isWeekday) {
+                            baseWorkdays++;
+                            const dateStr = this.formatDateStr(year, month, d);
+                            const tag = this.markedDates[dateStr];
+                            if (tag === 'holiday') paintedHolidayWeekdays++;
+                            if (tag === 'leave') paintedLeaveWeekdays++;
+                        }
+                    }
+
+                    const manualHoliday = this.getManualDeduction(year, month, 'holiday');
+                    const manualLeave = this.getManualDeduction(year, month, 'leave');
+
+                    const holidayDays = paintedHolidayWeekdays + manualHoliday;
+                    const leaveDays = paintedLeaveWeekdays + manualLeave;
+                    const workdays = Math.max(0, baseWorkdays - holidayDays - leaveDays);
+                    const requiredAttendance = Math.ceil(workdays * (this.attendanceRate / 100));
+                    const normalAttendance = this.getMonthColorCount(year, month, 'office');
+                    const attendanceDiff = normalAttendance - requiredAttendance;
+                    const isAttendanceMet = normalAttendance >= requiredAttendance;
+                    const attendanceProgress = requiredAttendance === 0 ? 100 : Math.min(100, Math.round((normalAttendance / requiredAttendance) * 100));
+
+                    return {
+                        totalDays,
+                        baseWorkdays,
+                        paintedHolidayWeekdays,
+                        paintedLeaveWeekdays,
+                        holidayDays,
+                        leaveDays,
+                        workdays,
+                        requiredAttendance,
+                        normalAttendance,
+                        attendanceDiff,
+                        isAttendanceMet,
+                        attendanceProgress
+                    };
+                },
+
+                get currentMonthStats() {
+                    return this.getMonthStats(this.currentYear, this.currentMonth);
+                },
+
+                get yearTotalStats() {
+                    let baseWorkdays = 0;
+                    let holidayDays = 0;
+                    let leaveDays = 0;
+                    let workdays = 0;
+                    let requiredAttendance = 0;
+                    let normalAttendance = 0;
+
+                    for (let m = 0; m < 12; m++) {
+                        const s = this.getMonthStats(this.currentYear, m);
+                        baseWorkdays += s.baseWorkdays;
+                        holidayDays += s.holidayDays;
+                        leaveDays += s.leaveDays;
+                        workdays += s.workdays;
+                        requiredAttendance += s.requiredAttendance;
+                        normalAttendance += s.normalAttendance;
+                    }
+                    const attendanceDiff = normalAttendance - requiredAttendance;
+                    const isAttendanceMet = normalAttendance >= requiredAttendance;
+                    return { baseWorkdays, holidayDays, leaveDays, workdays, requiredAttendance, normalAttendance, attendanceDiff, isAttendanceMet };
+                },
+
+                // 统计指定月份某种颜色标记的天数
+                getMonthColorCount(year, month, colorId) {
+                    const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
+                    let count = 0;
+                    Object.keys(this.markedDates).forEach(k => {
+                        if (k.startsWith(prefix) && this.markedDates[k] === colorId) {
+                            count++;
+                        }
+                    });
+                    return count;
+                },
+
+                // 构建月视图 35 或 42 格日历数组（周一作为每周第一天）
+                get monthGridCells() {
+                    const year = this.currentYear;
+                    const month = this.currentMonth;
+                    const firstDayObj = new Date(year, month, 1);
+                    const startOffset = (firstDayObj.getDay() + 6) % 7; // 周一=0, 周日=6
+                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+                    const prevMonthDays = new Date(year, month, 0).getDate();
+
+                    const todayStr = this.formatDateStr(now.getFullYear(), now.getMonth(), now.getDate());
+                    const cells = [];
+
+                    // 上月补齐空格
+                    for (let i = startOffset - 1; i >= 0; i--) {
+                        const d = prevMonthDays - i;
+                        cells.push({
+                            day: d,
+                            isCurrentMonth: false,
+                            isWeekend: false,
+                            isToday: false,
+                            dateStr: '',
+                            colorObj: null
+                        });
+                    }
+
+                    // 当月日期
+                    for (let d = 1; d <= daysInMonth; d++) {
+                        const dateStr = this.formatDateStr(year, month, d);
+                        const dayOfWeek = new Date(year, month, d).getDay();
+                        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                        const colorId = this.markedDates[dateStr] || null;
+                        cells.push({
+                            day: d,
+                            isCurrentMonth: true,
+                            isWeekend,
+                            isToday: dateStr === todayStr,
+                            dateStr,
+                            colorObj: this.getColorObj(colorId)
+                        });
+                    }
+
+                    // 下月补齐尾格
+                    const totalCells = cells.length <= 35 ? 35 : 42;
+                    let nextDay = 1;
+                    while (cells.length < totalCells) {
+                        cells.push({
+                            day: nextDay++,
+                            isCurrentMonth: false,
+                            isWeekend: false,
+                            isToday: false,
+                            dateStr: '',
+                            colorObj: null
+                        });
+                    }
+
+                    return cells;
+                },
+
+                // 年视图迷你月历格子
+                getMiniMonthCells(year, month) {
+                    const startOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+                    const todayStr = this.formatDateStr(now.getFullYear(), now.getMonth(), now.getDate());
+                    const cells = [];
+
+                    for (let i = 0; i < startOffset; i++) {
+                        cells.push({ day: null });
+                    }
+                    for (let d = 1; d <= daysInMonth; d++) {
+                        const dateStr = this.formatDateStr(year, month, d);
+                        const dayOfWeek = new Date(year, month, d).getDay();
+                        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                        const colorId = this.markedDates[dateStr] || null;
+                        cells.push({
+                            day: d,
+                            isWeekend,
+                            isToday: dateStr === todayStr,
+                            colorObj: this.getColorObj(colorId)
+                        });
+                    }
+                    return cells;
+                },
+
+                // 涂色与拖拽交互
+                startPaint(cell) {
+                    if (!cell.isCurrentMonth) return;
+                    this.isMouseDown = true;
+
+                    if (this.selectedColor === null) {
+                        this.paintMode = 'remove';
+                        delete this.markedDates[cell.dateStr];
+                    } else if (this.markedDates[cell.dateStr] === this.selectedColor) {
+                        // 点击已涂相同颜色的日期时自动取消涂色，提升交互直觉
+                        this.paintMode = 'remove';
+                        delete this.markedDates[cell.dateStr];
+                    } else {
+                        this.paintMode = 'add';
+                        this.markedDates[cell.dateStr] = this.selectedColor;
+                    }
+                },
+
+                continuePaint(cell) {
+                    if (!this.isMouseDown || !cell.isCurrentMonth) return;
+                    if (this.paintMode === 'remove' || this.selectedColor === null) {
+                        delete this.markedDates[cell.dateStr];
+                    } else {
+                        this.markedDates[cell.dateStr] = this.selectedColor;
+                    }
+                },
+
+                endPaint() {
+                    this.isMouseDown = false;
+                },
+
+                // 清空当月涂色与手动扣减
+                clearCurrentMonthData() {
+                    const prefix = `${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}-`;
+                    const monthKey = this.getMonthKey(this.currentYear, this.currentMonth);
+                    let removed = 0;
+
+                    Object.keys(this.markedDates).forEach(k => {
+                        if (k.startsWith(prefix)) {
+                            delete this.markedDates[k];
+                            removed++;
+                        }
+                    });
+
+                    const hadManual = this.manualDeductions[monthKey] &&
+                        (this.manualDeductions[monthKey].holiday > 0 || this.manualDeductions[monthKey].leave > 0);
+                    if (this.manualDeductions[monthKey]) {
+                        delete this.manualDeductions[monthKey];
+                    }
+
+                    if (removed > 0 || hadManual) {
+                        this.showToast(`已清空 ${this.currentYear}年${this.monthNames[this.currentMonth]} 的所有标记与扣减`, 'warning');
+                    } else {
+                        this.showToast('当前月份暂无标记或扣减设置', 'info');
+                    }
+                },
+
+                // 二次确认清空全部
+                clearAllData() {
+                    if (this.confirmPending !== 'clearAll') {
+                        this.confirmPending = 'clearAll';
+                        this.showToast('再次点击“确认重置全部?”以清空所有历史记录', 'warning');
+                        setTimeout(() => {
+                            if (this.confirmPending === 'clearAll') this.confirmPending = null;
+                        }, 4000);
+                        return;
+                    }
+                    this.confirmPending = null;
+                    this.markedDates = {};
+                    this.manualDeductions = {};
+                    this.saveToStorage();
+                    this.showToast('已重置全部日历数据', 'success');
+                },
+
+                // localStorage 持久化
+                saveToStorage() {
+                    try {
+                        localStorage.setItem('smart_calendar_attendance_v2', JSON.stringify({
+                            attendanceRate: this.attendanceRate,
+                            markedDates: this.markedDates,
+                            manualDeductions: this.manualDeductions,
+                            palette: this.palette
+                        }));
+                    } catch (e) {
+                        console.error('保存本地存储失败:', e);
+                    }
+                },
+
+                loadFromStorage() {
+                    try {
+                        const raw = localStorage.getItem('smart_calendar_attendance_v2');
+                        if (!raw) return;
+                        const data = JSON.parse(raw);
+                        this.applyImportedPayload(data);
+                    } catch (e) {
+                        console.error('读取本地存储失败:', e);
+                    }
+                },
+
+                applyImportedPayload(data) {
+                    if (!data || typeof data !== 'object') return;
+                    if (typeof data.attendanceRate === 'number') this.attendanceRate = data.attendanceRate;
+                    if (data.markedDates && typeof data.markedDates === 'object') {
+                        const cleanedDates = {};
+                        Object.keys(data.markedDates).forEach(k => {
+                            if (data.markedDates[k] !== 'important') {
+                                cleanedDates[k] = data.markedDates[k];
+                            }
+                        });
+                        this.markedDates = cleanedDates;
+                    }
+                    if (data.manualDeductions && typeof data.manualDeductions === 'object') {
+                        this.manualDeductions = data.manualDeductions;
+                    }
+                    if (Array.isArray(data.palette) && data.palette.length > 0) {
+                        this.palette = data.palette
+                            .filter(p => p.id !== 'important')
+                            .map(p => ({
+                                ...p,
+                                deductsWorkday: p.id === 'holiday' || p.id === 'leave' || Boolean(p.deductsWorkday)
+                            }));
+                    }
+                },
+
+                // GitHub Gist 云端同步配置存储
+                saveGistConfig() {
+                    try {
+                        localStorage.setItem('smart_calendar_gist_config', JSON.stringify(this.gistConfig));
+                    } catch (e) {
+                        console.error('保存云端同步配置失败:', e);
+                    }
+                },
+
+                loadGistConfig() {
+                    try {
+                        const raw = localStorage.getItem('smart_calendar_gist_config');
+                        if (raw) {
+                            const cfg = JSON.parse(raw);
+                            this.gistConfig = { ...this.gistConfig, ...cfg };
+                        }
+                    } catch (e) {
+                        console.error('读取云端同步配置失败:', e);
+                    }
+                },
+
+                // 上传当前日历数据到 GitHub Gist
+                async pushToGist() {
+                    if (!this.gistConfig.token) {
+                        this.showToast('请先填写 GitHub Personal Access Token', 'warning');
+                        return;
+                    }
+                    this.syncing = true;
+                    const payload = JSON.stringify({
+                        updatedAt: new Date().toISOString(),
+                        attendanceRate: this.attendanceRate,
+                        palette: this.palette,
+                        markedDates: this.markedDates,
+                        manualDeductions: this.manualDeductions
+                    }, null, 2);
+
+                    try {
+                        let gistId = this.gistConfig.gistId;
+                        // 如果没有填写 Gist ID，先检索账号下是否已有同名备份 Gist
+                        if (!gistId) {
+                            const listRes = await fetch('https://api.github.com/gists', {
+                                headers: {
+                                    'Authorization': `token ${this.gistConfig.token}`,
+                                    'Accept': 'application/vnd.github.v3+json'
+                                }
+                            });
+                            if (!listRes.ok) throw new Error('Token 验证失败或网络异常');
+                            const gists = await listRes.json();
+                            const existing = gists.find(g => g.files && g.files['smart_calendar_attendance.json']);
+                            if (existing) {
+                                gistId = existing.id;
+                                this.gistConfig.gistId = gistId;
+                            }
+                        }
+
+                        const url = gistId ? `https://api.github.com/gists/${gistId}` : 'https://api.github.com/gists';
+                        const method = gistId ? 'PATCH' : 'POST';
+                        const body = {
+                            description: '智能出勤日历与涂色统计工具 - 多端同步备份',
+                            public: false,
+                            files: {
+                                'smart_calendar_attendance.json': {
+                                    content: payload
+                                }
+                            }
+                        };
+
+                        const res = await fetch(url, {
+                            method,
+                            headers: {
+                                'Authorization': `token ${this.gistConfig.token}`,
+                                'Accept': 'application/vnd.github.v3+json',
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(body)
+                        });
+
+                        if (!res.ok) throw new Error(`上传失败 (${res.status})`);
+                        const result = await res.json();
+                        this.gistConfig.gistId = result.id;
+                        this.gistConfig.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        this.saveGistConfig();
+                        this.showToast('云端上传成功！多端数据已更新', 'success');
+                    } catch (err) {
+                        this.showToast(err.message || '云端上传失败，请检查 Token 权限', 'warning');
+                    } finally {
+                        this.syncing = false;
+                    }
+                },
+
+                // 从 GitHub Gist 拉取最新数据
+                async pullFromGist() {
+                    if (!this.gistConfig.token) {
+                        this.showToast('请先填写 GitHub Personal Access Token', 'warning');
+                        return;
+                    }
+                    this.syncing = true;
+                    try {
+                        let gistId = this.gistConfig.gistId;
+                        if (!gistId) {
+                            const listRes = await fetch('https://api.github.com/gists', {
+                                headers: {
+                                    'Authorization': `token ${this.gistConfig.token}`,
+                                    'Accept': 'application/vnd.github.v3+json'
+                                }
+                            });
+                            if (!listRes.ok) throw new Error('Token 验证失败或网络异常');
+                            const gists = await listRes.json();
+                            const existing = gists.find(g => g.files && g.files['smart_calendar_attendance.json']);
+                            if (!existing) throw new Error('未在云端找到备份文件，请先在一台设备上点击上传');
+                            gistId = existing.id;
+                            this.gistConfig.gistId = gistId;
+                        }
+
+                        const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+                            headers: {
+                                'Authorization': `token ${this.gistConfig.token}`,
+                                'Accept': 'application/vnd.github.v3+json'
+                            }
+                        });
+                        if (!res.ok) throw new Error(`拉取失败 (${res.status})`);
+                        const gistData = await res.json();
+                        const fileObj = gistData.files && gistData.files['smart_calendar_attendance.json'];
+                        if (!fileObj || !fileObj.content) throw new Error('云端备份文件内容为空');
+
+                        const parsed = JSON.parse(fileObj.content);
+                        this.applyImportedPayload(parsed);
+                        this.saveToStorage();
+                        this.gistConfig.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        this.saveGistConfig();
+                        this.showToast('已从云端拉取最新日历数据！', 'success');
+                    } catch (err) {
+                        this.showToast(err.message || '云端拉取失败，请检查配置', 'warning');
+                    } finally {
+                        this.syncing = false;
+                    }
+                },
+
+                // 导出 JSON
+                exportData() {
+                    const payload = JSON.stringify({
+                        exportedAt: new Date().toISOString(),
+                        attendanceRate: this.attendanceRate,
+                        palette: this.palette,
+                        markedDates: this.markedDates,
+                        manualDeductions: this.manualDeductions
+                    }, null, 2);
+
+                    const blob = new Blob([payload], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `出勤日历备份_${this.currentYear}${String(this.currentMonth + 1).padStart(2, '0')}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    this.showToast('JSON 备份文件已导出', 'success');
+                },
+
+                // 导入 JSON
+                importData(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const parsed = JSON.parse(e.target.result);
+                            this.applyImportedPayload(parsed);
+                            this.saveToStorage();
+                            this.showToast('数据备份导入成功！', 'success');
+                        } catch (err) {
+                            this.showToast('导入失败：JSON 文件格式无效', 'warning');
+                        }
+                    };
+                    reader.readAsText(file);
+                    event.target.value = '';
+                }
+            };
+        }
+    </script>
+</body>
+</html>
