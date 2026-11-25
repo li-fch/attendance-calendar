@@ -107,7 +107,7 @@
                     <div class="hidden md:flex items-baseline gap-1.5">
                         <span class="text-slate-900">智能出勤日历</span>
                         <span class="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100"
-                              x-text="view === 'month' ? (currentYear + '年' + monthNames[currentMonth]) : (currentYear + '年')"></span>
+                              x-text="view === 'month' ? (currentYear + '年 ' + monthNames[currentMonth]) : (currentYear + '年')"></span>
                     </div>
                 </div>
 
@@ -121,20 +121,21 @@
                     </button>
 
                     <div class="flex items-center px-1.5 gap-1">
-                        <select x-model.number="currentYear"
-                                @change="clampYearMonth()"
+                        <select :value="currentYear"
+                                @change="currentYear = Number($event.target.value); clampYearMonth()"
                                 aria-label="选择年份"
                                 class="bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer py-1">
                             <template x-for="y in yearList" :key="y">
-                                <option :value="y" x-text="y + '年'"></option>
+                                <option :value="y" :selected="y === currentYear" x-text="y + '年'"></option>
                             </template>
                         </select>
                         <template x-if="view === 'month'">
-                            <select x-model.number="currentMonth"
+                            <select :value="currentMonth"
+                                    @change="currentMonth = Number($event.target.value); clampYearMonth()"
                                     aria-label="选择月份"
                                     class="bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer py-1">
                                 <template x-for="(mName, idx) in monthNames" :key="idx">
-                                    <option :value="idx" x-text="mName"></option>
+                                    <option :value="idx" :selected="idx === currentMonth" x-text="mName"></option>
                                 </template>
                             </select>
                         </template>
@@ -260,7 +261,7 @@
                     </template>
                 </div>
 
-                <!-- 月视图大网格日历（完整支持桌面拖拽 & iPhone 触摸滑动涂色） -->
+                <!-- 月视图大网格日历（全格纯色染色，无格子内文字标签） -->
                 <div class="grid grid-cols-7 divide-x divide-y divide-slate-100 calendar-paint-grid"
                      @mouseleave="endPaint()"
                      @touchmove.prevent="handleTouchMove($event)">
@@ -270,55 +271,46 @@
                              @mousedown="startPaint(cell)"
                              @mouseenter="continuePaint(cell)"
                              @touchstart.prevent="startPaint(cell)"
-                             class="min-h-[74px] sm:min-h-[96px] p-1.5 sm:p-2.5 transition-colors relative flex flex-col justify-between"
+                             class="min-h-[70px] sm:min-h-[90px] p-1.5 sm:p-2.5 transition-colors relative flex flex-col justify-between"
                              :class="[
                                  cell.isCurrentMonth ? 'cursor-pointer' : 'bg-slate-50/60 opacity-45 cursor-default',
                                  cell.isCurrentMonth && !cell.colorObj && cell.isWeekend ? 'bg-slate-50/80 hover:bg-slate-100/80' : '',
-                                 cell.isCurrentMonth && !cell.colorObj && !cell.isWeekend ? 'bg-white hover:bg-indigo-50/30' : ''
+                                 cell.isCurrentMonth && !cell.colorObj && !cell.isWeekend ? 'bg-white hover:bg-indigo-50/30' : '',
+                                 cell.isCurrentMonth && cell.colorObj ? 'shadow-inner' : ''
                              ]"
-                             :style="cell.isCurrentMonth && cell.colorObj ? { backgroundColor: cell.colorObj.hex + '1C' } : {}">
+                             :style="cell.isCurrentMonth && cell.colorObj ? { backgroundColor: cell.colorObj.hex } : {}">
 
                             <!-- 顶部日期数字与状态徽标 -->
                             <div class="flex items-center justify-between gap-1 pointer-events-none">
                                 <span class="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition"
                                       :class="[
-                                          cell.isToday ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-200' : '',
-                                          !cell.isToday && cell.isWeekend && cell.isCurrentMonth ? 'text-rose-500' : '',
-                                          !cell.isToday && !cell.isWeekend && cell.isCurrentMonth ? 'text-slate-800' : '',
+                                          cell.isCurrentMonth && cell.colorObj && cell.isToday ? 'bg-white text-slate-900 shadow-xs ring-2 ring-white/60' : '',
+                                          cell.isCurrentMonth && cell.colorObj && !cell.isToday ? 'text-white' : '',
+                                          (!cell.isCurrentMonth || !cell.colorObj) && cell.isToday ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-200' : '',
+                                          (!cell.isCurrentMonth || !cell.colorObj) && !cell.isToday && cell.isWeekend && cell.isCurrentMonth ? 'text-rose-500' : '',
+                                          (!cell.isCurrentMonth || !cell.colorObj) && !cell.isToday && !cell.isWeekend && cell.isCurrentMonth ? 'text-slate-800' : '',
                                           !cell.isCurrentMonth ? 'text-slate-400' : ''
                                       ]"
                                       x-text="cell.day">
                                 </span>
 
-                                <!-- 工作日 / 周末 标识 -->
+                                <!-- 右上角状态标识 (休 / 班 / 今) -->
                                 <template x-if="cell.isCurrentMonth">
-                                    <span class="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                                          :class="cell.isWeekend ? 'text-slate-400' : (cell.colorObj && cell.colorObj.deductsWorkday ? 'bg-amber-100 text-amber-800' : 'text-slate-400')"
-                                          x-text="cell.isWeekend ? '休' : (cell.colorObj && cell.colorObj.deductsWorkday ? '扣减' : '班')">
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                          :class="cell.colorObj ? 'bg-black/20 text-white' : (cell.isWeekend ? 'text-slate-400' : 'text-slate-400')"
+                                          x-text="cell.isToday ? '今' : (cell.isWeekend ? '休' : '班')">
                                     </span>
-                                </template>
-                            </div>
-
-                            <!-- 底部涂色标签胶囊 -->
-                            <div class="mt-1.5 min-h-[22px] flex items-end pointer-events-none">
-                                <template x-if="cell.isCurrentMonth && cell.colorObj">
-                                    <div class="w-full px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-semibold text-white truncate shadow-2xs flex items-center justify-between gap-1"
-                                         :style="{ backgroundColor: cell.colorObj.hex }">
-                                        <span class="truncate" x-text="cell.colorObj.name"></span>
-                                        <span x-show="!cell.isWeekend && cell.colorObj.deductsWorkday"
-                                              class="text-[9px] bg-black/20 px-1 rounded flex-shrink-0 hidden sm:inline">-1工</span>
-                                    </div>
                                 </template>
                             </div>
                         </div>
                     </template>
                 </div>
 
-                <!-- 底部快捷批量操作栏 -->
+                <!-- 底部快捷操作栏 -->
                 <div class="px-4 sm:px-5 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs">
                     <div class="flex items-center gap-1.5 text-slate-500">
                         <i class="fa-solid fa-hand-pointer text-indigo-500"></i>
-                        <span>支持点击或<strong>按住滑动</strong>批量涂色</span>
+                        <span>支持点击或<strong>按住滑动</strong>全格染色</span>
                     </div>
 
                     <div class="flex items-center gap-2 flex-wrap">
@@ -327,19 +319,6 @@
                                 class="px-2.5 py-1.5 rounded-lg font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                             <i class="fa-solid fa-rotate-left text-slate-500"></i>
                             <span>撤销</span>
-                        </button>
-
-                        <button @click="fillRemainingWeekdays()"
-                                class="px-2.5 py-1.5 rounded-lg font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition flex items-center gap-1">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i>
-                            <span>一键填满本月正常出勤</span>
-                        </button>
-
-                        <button x-show="currentYear === 2026"
-                                @click="apply2026StatutoryHolidays()"
-                                class="px-2.5 py-1.5 rounded-lg font-semibold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition flex items-center gap-1">
-                            <i class="fa-solid fa-calendar-plus"></i>
-                            <span>导入2026法定节假日</span>
                         </button>
 
                         <button @click="clearCurrentMonthData()"
@@ -384,16 +363,13 @@
                         <div @click="currentMonth = m - 1; view = 'month'"
                              class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200 hover:border-indigo-400 hover:shadow-md transition cursor-pointer flex flex-col justify-between group">
                             <div>
-                                <!-- 月份卡片标题与统计 -->
+                                <!-- 月份卡片标题 -->
                                 <div class="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
                                     <span class="font-bold text-slate-800 group-hover:text-indigo-600 transition" x-text="currentYear + '年 ' + monthNames[m - 1]"></span>
-                                    <div class="flex items-center gap-1 text-[11px]">
-                                        <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded font-medium"
-                                              x-text="'实工' + getMonthStats(currentYear, m - 1).workdays + '天'"></span>
-                                        <span class="px-1.5 py-0.5 rounded font-semibold"
-                                              :class="getMonthStats(currentYear, m - 1).isAttendanceMet ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'"
-                                              x-text="'出勤 ' + getMonthStats(currentYear, m - 1).normalAttendance + '/' + getMonthStats(currentYear, m - 1).requiredAttendance"></span>
-                                    </div>
+                                    <span class="text-[11px] text-slate-400 group-hover:text-indigo-500 transition flex items-center gap-1">
+                                        <span>详情</span>
+                                        <i class="fa-solid fa-angle-right text-[10px]"></i>
+                                    </span>
                                 </div>
 
                                 <!-- 微缩星期头 -->
@@ -419,10 +395,16 @@
                                 </div>
                             </div>
 
-                            <!-- 卡片底部简洁达标状态标识 -->
-                            <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                                <span>出勤状态</span>
-                                <span class="px-2 py-0.5 rounded font-semibold text-[10px]"
+                            <!-- 卡片底部：实工天数、出勤天数与出勤状态并排展示 -->
+                            <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between gap-1 text-[11px]">
+                                <div class="flex items-center gap-1 flex-wrap">
+                                    <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded font-medium"
+                                          x-text="'实工' + getMonthStats(currentYear, m - 1).workdays + '天'"></span>
+                                    <span class="px-1.5 py-0.5 rounded font-semibold"
+                                          :class="getMonthStats(currentYear, m - 1).isAttendanceMet ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'"
+                                          x-text="'出勤' + getMonthStats(currentYear, m - 1).normalAttendance + '/' + getMonthStats(currentYear, m - 1).requiredAttendance + '天'"></span>
+                                </div>
+                                <span class="px-1.5 py-0.5 rounded font-semibold text-[10px] flex-shrink-0"
                                       :class="getMonthStats(currentYear, m - 1).isAttendanceMet ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
                                       x-text="getMonthStats(currentYear, m - 1).isAttendanceMet ? '✅ 已达标' : '⏳ 未达标'">
                                 </span>
@@ -803,9 +785,21 @@
                 },
 
                 init() {
+                    const today = new Date();
+                    const defaultYear = Math.min(this.maxYear, Math.max(this.minYear, today.getFullYear()));
+                    const defaultMonth = today.getFullYear() < this.minYear ? 0 : (today.getFullYear() > this.maxYear ? 11 : today.getMonth());
+
+                    this.currentYear = defaultYear;
+                    this.currentMonth = defaultMonth;
+
                     this.loadFromStorage();
                     this.loadGistConfig();
                     this.clampYearMonth();
+
+                    this.$nextTick(() => {
+                        this.currentYear = defaultYear;
+                        this.currentMonth = defaultMonth;
+                    });
 
                     this.$watch('attendanceRate', () => {
                         this.clampAttendanceRate();
@@ -1144,56 +1138,6 @@
 
                 endPaint() {
                     this.isMouseDown = false;
-                },
-
-                // 一键填满本月未标记的工作日为“正常出勤”
-                fillRemainingWeekdays() {
-                    this.pushHistorySnapshot();
-                    const year = this.currentYear;
-                    const month = this.currentMonth;
-                    const totalDays = new Date(year, month + 1, 0).getDate();
-                    let filledCount = 0;
-
-                    for (let d = 1; d <= totalDays; d++) {
-                        const dayOfWeek = new Date(year, month, d).getDay();
-                        const isWeekday = dayOfWeek !== 0 && dayOfWeek !== 6;
-                        const dateStr = this.formatDateStr(year, month, d);
-                        if (isWeekday && !this.markedDates[dateStr]) {
-                            this.markedDates[dateStr] = 'office';
-                            filledCount++;
-                        }
-                    }
-
-                    if (filledCount > 0) {
-                        this.showToast(`已将本月 ${filledCount} 个空白工作日填为“正常出勤”`, 'success');
-                    } else {
-                        this.showToast('本月所有工作日均已标记，无需填充', 'info');
-                    }
-                },
-
-                // 一键标记 2026 年中国法定节假日
-                apply2026StatutoryHolidays() {
-                    this.pushHistorySnapshot();
-                    const holidays2026 = [
-                        // 元旦 1月1日-3日
-                        '2026-01-01', '2026-01-02', '2026-01-03',
-                        // 春节 2月17日-23日
-                        '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20', '2026-02-21', '2026-02-22', '2026-02-23',
-                        // 清明节 4月5日
-                        '2026-04-05',
-                        // 劳动节 5月1日-5日
-                        '2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05',
-                        // 端午节 6月19日
-                        '2026-06-19',
-                        // 中秋节 9月25日
-                        '2026-09-25',
-                        // 国庆节 10月1日-7日
-                        '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07'
-                    ];
-                    holidays2026.forEach(dateStr => {
-                        this.markedDates[dateStr] = 'holiday';
-                    });
-                    this.showToast('已标记 2026 年法定节假日（可随时使用橡皮擦微调）', 'success');
                 },
 
                 // 清空当月涂色与手动扣减
